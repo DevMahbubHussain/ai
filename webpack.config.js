@@ -140,6 +140,16 @@ module.exports = {
 			'src/experiments/summarization',
 			'bulk.ts'
 		),
+		'experiments/revision-change-summary': path.resolve(
+			process.cwd(),
+			'src/experiments/revision-change-summary',
+			'index.tsx'
+		),
+		'experiments/revision-change-summary-classic': path.resolve(
+			process.cwd(),
+			'src/experiments/revision-change-summary',
+			'classic.tsx'
+		),
 		'experiments/content-translation': path.resolve(
 			process.cwd(),
 			'src/experiments/content-translation',
