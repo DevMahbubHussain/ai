@@ -14,8 +14,6 @@ use WordPress\AI\Abilities\Revision_Change_Summary\Revision_Change_Summary;
 /**
  * Revision_Change_Summary Ability test case.
  *
- * @covers \WordPress\AI\Abilities\Revision_Change_Summary\Revision_Change_Summary
- *
  * @since x.x.x
  */
 class Revision_Change_SummaryTest extends WP_UnitTestCase {
@@ -856,6 +854,123 @@ class Revision_Change_SummaryTest extends WP_UnitTestCase {
 		);
 
 		$this->assertSame( '', $this->invoke( $this->ability, 'build_diff', array( $from, $to ) ) );
+	}
+
+	/**
+	 * Returns an ability that calls the real model code.
+	 *
+	 * @since x.x.x
+	 *
+	 * @return \WordPress\AI\Abilities\Revision_Change_Summary\Revision_Change_Summary The ability.
+	 */
+	private function get_real_ability() {
+		return new Revision_Change_Summary(
+			'ai/revision-change-summary',
+			array(
+				'label'       => 'Revision Change Summary',
+				'description' => 'Test',
+			)
+		);
+	}
+
+	/**
+	 * Tests that a valid model response is parsed.
+	 *
+	 * @since x.x.x
+	 */
+	public function test_parse_summary_with_valid_response() {
+		$result = $this->invoke(
+			$this->get_real_ability(),
+			'parse_summary',
+			array( '{"summary":"Changed the intro.","changes":["Edited a paragraph.",42,null]}' )
+		);
+
+		$this->assertSame(
+			array(
+				'summary' => 'Changed the intro.',
+				'changes' => array( 'Edited a paragraph.' ),
+			),
+			$result,
+			'Non-string changes should be dropped.'
+		);
+	}
+
+	/**
+	 * Tests that a response without changes is parsed.
+	 *
+	 * @since x.x.x
+	 */
+	public function test_parse_summary_without_changes() {
+		$result = $this->invoke( $this->get_real_ability(), 'parse_summary', array( '{"summary":"Changed the intro."}' ) );
+
+		$this->assertSame( array(), $result['changes'] );
+	}
+
+	/**
+	 * Tests that invalid model responses are rejected.
+	 *
+	 * @since x.x.x
+	 */
+	public function test_parse_summary_with_invalid_response() {
+		foreach ( array( 'not json', '{"changes":[]}', '{"summary":["not","a","string"]}' ) as $response ) {
+			$result = $this->invoke( $this->get_real_ability(), 'parse_summary', array( $response ) );
+
+			$this->assertInstanceOf( WP_Error::class, $result, $response );
+			$this->assertSame( 'invalid_response', $result->get_error_code() );
+		}
+	}
+
+	/**
+	 * Tests the JSON schema the model must follow.
+	 *
+	 * @since x.x.x
+	 */
+	public function test_summary_schema_requires_summary_and_changes() {
+		$schema = $this->invoke( $this->get_real_ability(), 'summary_schema' );
+
+		$this->assertSame( array( 'summary', 'changes' ), $schema['required'] );
+		$this->assertFalse( $schema['additionalProperties'] );
+		$this->assertSame( 'string', $schema['properties']['changes']['items']['type'] );
+	}
+
+	/**
+	 * Tests that the prompt wraps the diff and notes when it was cut.
+	 *
+	 * @since x.x.x
+	 */
+	public function test_generate_summary_builds_filterable_prompt() {
+		$captured = array();
+		$callback = static function ( $prompt, $diff, $truncated ) use ( &$captured ) {
+			$captured = array(
+				'prompt'    => $prompt,
+				'diff'      => $diff,
+				'truncated' => $truncated,
+			);
+			return $prompt;
+		};
+		add_filter( 'wpai_revision_change_summary_prompt', $callback, 10, 3 );
+
+		$revision = self::factory()->post->create_and_get();
+
+		try {
+			$result = $this->invoke( $this->get_real_ability(), 'generate_summary', array( '+ Added line', true, $revision ) );
+		} catch ( \Throwable $e ) {
+			$result = null;
+		}
+
+		remove_filter( 'wpai_revision_change_summary_prompt', $callback, 10 );
+
+		$this->assertStringContainsString( '<changes>+ Added line</changes>', $captured['prompt'] );
+		$this->assertStringContainsString( '<note>', $captured['prompt'] );
+		$this->assertSame( '+ Added line', $captured['diff'] );
+		$this->assertTrue( $captured['truncated'] );
+
+		// Without a connected provider, generation fails cleanly.
+		if ( null === $result ) {
+			return;
+		}
+
+		$this->assertInstanceOf( WP_Error::class, $result );
 	}
 
 	/**

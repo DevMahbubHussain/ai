@@ -17,8 +17,6 @@ use WordPress\AI\Features\Registry;
 /**
  * Revision_Change_Summary experiment test case.
  *
- * @covers \WordPress\AI\Experiments\Revision_Change_Summary\Revision_Change_Summary
- *
  * @since x.x.x
  */
 class Revision_Change_SummaryTest extends WP_UnitTestCase {
