@@ -10,7 +10,7 @@ import { Page } from '@wordpress/admin-ui';
 import apiFetch from '@wordpress/api-fetch';
 import { Notice } from '@wordpress/components';
 import { dispatch } from '@wordpress/data';
-import { __ } from '@wordpress/i18n';
+import { __, _n, sprintf } from '@wordpress/i18n';
 import { store as noticesStore } from '@wordpress/notices';
 import {
 	createRoot,
@@ -272,24 +272,61 @@ const App: React.FC = () => {
 		setLogsQuery( ( previous ) => ( { ...previous, page: 1 } ) );
 	};
 
-	const handlePurge = async () => {
+	const handleDeleteLogs = async ( days: number ) => {
 		setPurging( true );
 
 		try {
-			await apiFetch( {
-				path: settings.rest.routes.logs,
+			const response = await apiFetch< { deleted: number } >( {
+				path: `${ settings.rest.routes.logs }?before_days=${ days }`,
 				method: 'DELETE',
 			} );
+			const deleted = Number( response?.deleted ?? 0 );
 
-			setLogs( [] );
-			setTotal( 0 );
-			setTotalPages( 1 );
-			setLogsQuery( ( previous ) => ( {
-				...previous,
-				page: 1,
-			} ) );
+			if ( days > 0 ) {
+				// Reload the table so it shows the logs that remain. Going back to
+				// the first page triggers a reload on its own.
+				if ( logsQuery.page === 1 ) {
+					fetchLogs();
+				} else {
+					setLogsQuery( ( previous ) => ( {
+						...previous,
+						page: 1,
+					} ) );
+				}
 
-			showNotice( 'success', __( 'All logs have been purged.', 'ai' ) );
+				showNotice(
+					'success',
+					deleted > 0
+						? sprintf(
+								/* translators: %s: Number of deleted log entries. */
+								_n(
+									'%s log entry has been deleted.',
+									'%s log entries have been deleted.',
+									deleted,
+									'ai'
+								),
+								deleted.toLocaleString()
+						  )
+						: __(
+								'No logs older than the selected age were found.',
+								'ai'
+						  )
+				);
+			} else {
+				setLogs( [] );
+				setTotal( 0 );
+				setTotalPages( 1 );
+				setLogsQuery( ( previous ) => ( {
+					...previous,
+					page: 1,
+				} ) );
+
+				showNotice(
+					'success',
+					__( 'All logs have been deleted.', 'ai' )
+				);
+			}
+
 			fetchSummary( summaryPeriod );
 			fetchFilters();
 		} catch ( apiError ) {
@@ -344,8 +381,10 @@ const App: React.FC = () => {
 					/>
 
 					<SettingsPanel
-						hasLogs={ total > 0 }
-						onPurgeLogs={ handlePurge }
+						// The table only counts the selected period, so also check
+						// the filter options, which cover every stored log.
+						hasLogs={ total > 0 || filterOptions.types.length > 0 }
+						onDeleteLogs={ handleDeleteLogs }
 						purging={ purging }
 					/>
 				</div>

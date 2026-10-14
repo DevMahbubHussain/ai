@@ -397,10 +397,15 @@
 	.description {
 		margin-bottom: 12px;
 	}
+
+	.components-select-control {
+		margin-bottom: 12px;
+	}
 }
 
 .ai-request-logs__purge-confirm {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	gap: 8px;
 
