@@ -83,6 +83,12 @@ class Revision_Change_Summary extends Abstract_Feature {
 			return;
 		}
 
+		// Existing revisions can still be shown when revisions are turned off for the post.
+		$post = get_post();
+		if ( $post && ! wp_revisions_enabled( $post ) ) {
+			return;
+		}
+
 		Asset_Loader::enqueue_script( 'revision_change_summary', 'experiments/revision-change-summary', array( 'include_core_abilities' => true ) );
 		Asset_Loader::enqueue_style( 'revision_change_summary', 'experiments/revision-change-summary' );
 
@@ -109,7 +115,7 @@ class Revision_Change_Summary extends Abstract_Feature {
 
 		// The revisions screen loads its post into the global `$post`.
 		$post = get_post();
-		if ( ! $post || ! current_user_can( 'edit_post', $post->ID ) || ! Revision_Change_Summary_Ability::post_type_is_supported( $post->post_type ) ) {
+		if ( ! $post || ! current_user_can( 'edit_post', $post->ID ) || ! Revision_Change_Summary_Ability::post_type_is_supported( $post->post_type ) || ! wp_revisions_enabled( $post ) ) {
 			return;
 		}
 

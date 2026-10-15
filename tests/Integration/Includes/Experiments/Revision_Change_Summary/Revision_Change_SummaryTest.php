@@ -167,6 +167,46 @@ class Revision_Change_SummaryTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Tests that the editor script skips posts with revisions turned off.
+	 *
+	 * @since x.x.x
+	 */
+	public function test_enqueue_assets_skips_post_with_revisions_turned_off() {
+		$experiment = new Revision_Change_Summary();
+
+		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Simulating the edited post.
+		$GLOBALS['post'] = self::factory()->post->create_and_get();
+		set_current_screen( 'post' );
+
+		add_filter( 'wp_revisions_to_keep', '__return_zero' );
+		$experiment->enqueue_assets();
+		remove_filter( 'wp_revisions_to_keep', '__return_zero' );
+
+		$this->assertFalse( wp_script_is( 'ai_revision_change_summary', 'enqueued' ) );
+	}
+
+	/**
+	 * Tests that the classic script skips posts with revisions turned off.
+	 *
+	 * Core still shows autosaves on the classic revisions screen in that case.
+	 *
+	 * @since x.x.x
+	 */
+	public function test_classic_assets_skip_post_with_revisions_turned_off() {
+		$experiment = new Revision_Change_Summary();
+
+		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Simulating the revisions screen post.
+		$GLOBALS['post'] = self::factory()->post->create_and_get();
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
+
+		add_filter( 'wp_revisions_to_keep', '__return_zero' );
+		$experiment->maybe_enqueue_classic_assets( 'revision.php' );
+		remove_filter( 'wp_revisions_to_keep', '__return_zero' );
+
+		$this->assertFalse( wp_script_is( 'ai_revision_change_summary_classic', 'enqueued' ) );
+	}
+
+	/**
 	 * Tests that the classic script only loads on the revisions screen.
 	 *
 	 * @since x.x.x

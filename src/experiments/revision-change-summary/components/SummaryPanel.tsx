@@ -7,6 +7,8 @@
  */
 import { Button, ExternalLink, Notice } from '@wordpress/components';
 import { useInstanceId } from '@wordpress/compose';
+import { useEffect, useRef } from '@wordpress/element';
+import { decodeEntities } from '@wordpress/html-entities';
 import { __ } from '@wordpress/i18n';
 
 /**
@@ -16,12 +18,10 @@ import {
 	getProviderData,
 	isProviderAvailable,
 } from '../../../utils/provider-status';
-import { useRevisionSummary } from '../hooks/useRevisionSummary';
+import type { RevisionSummary } from '../hooks/useRevisionSummary';
 
 interface SummaryPanelProps {
-	postId: number;
-	revisionId: number | null;
-	fromRevisionId?: number | null | undefined;
+	summary: RevisionSummary;
 	unavailableMessage?: string | undefined;
 }
 
@@ -29,40 +29,52 @@ interface SummaryPanelProps {
  * Renders the summarize button, the result and any error.
  *
  * The summary is plain text from the AI response and is only displayed.
- * Nothing in the post or its revisions is changed.
+ * Nothing in the post or its revisions is changed. The button is hidden once
+ * a summary is shown, since the compared revisions don't change.
  *
  * @param props                    Component props.
- * @param props.postId             The post ID.
- * @param props.revisionId         The newer revision ID.
- * @param props.fromRevisionId     The older revision ID, if selected.
+ * @param props.summary            The summary state for the selected revisions.
  * @param props.unavailableMessage Message shown when a summary can't be made.
  */
 export default function SummaryPanel( {
-	postId,
-	revisionId,
-	fromRevisionId,
+	summary,
 	unavailableMessage,
 }: SummaryPanelProps ) {
-	const { isLoading, error, result, generate } = useRevisionSummary(
-		postId,
-		revisionId,
-		fromRevisionId
-	);
+	const { isLoading, isBusy, error, result, generate } = summary;
+	const resultRef = useRef< HTMLDivElement >( null );
+
+	// The focused button is removed once the summary is shown, so move focus to the summary.
+	useEffect( () => {
+		const { activeElement } = resultRef.current?.ownerDocument ?? document;
+
+		if (
+			result &&
+			( ! activeElement || activeElement.tagName === 'BODY' )
+		) {
+			resultRef.current?.focus();
+		}
+	}, [ result ] );
 
 	const descriptionId = useInstanceId(
 		SummaryPanel,
 		'ai-revision-change-summary-description'
 	);
 
-	let buttonLabel: string = __( 'Summarize changes', 'ai' );
+	let description: string =
+		unavailableMessage ||
+		__(
+			'Uses AI to describe what changed in the title and content between these revisions. Nothing is changed or saved.',
+			'ai'
+		);
 
-	if ( isLoading ) {
-		buttonLabel = __( 'Summarizing…', 'ai' );
-	} else if ( result ) {
-		buttonLabel = __( 'Regenerate summary', 'ai' );
+	// Only one summary is generated at a time.
+	if ( ! unavailableMessage && isBusy && ! isLoading ) {
+		description = __(
+			'A summary of other revisions is still being generated. Please wait for it to finish.',
+			'ai'
+		);
 	}
 
-	const isUnavailable = !! unavailableMessage || ! revisionId;
 	const { connectorsUrl } = getProviderData();
 
 	return (
@@ -71,29 +83,29 @@ export default function SummaryPanel( {
 				id={ descriptionId }
 				className="ai-revision-change-summary__description"
 			>
-				{ unavailableMessage ||
-					__(
-						'Uses AI to describe what changed in the title, content, and excerpt between these revisions. Nothing is changed or saved.',
-						'ai'
-					) }
+				{ description }
 			</p>
 
-			<Button
-				__next40pxDefaultSize
-				variant="secondary"
-				className="ai-revision-change-summary__button"
-				onClick={ generate }
-				isBusy={ isLoading }
-				disabled={ isLoading || isUnavailable }
-				accessibleWhenDisabled
-				aria-describedby={ descriptionId }
-			>
-				{ buttonLabel }
-			</Button>
+			{ ! result && (
+				<Button
+					__next40pxDefaultSize
+					variant="secondary"
+					className="ai-revision-change-summary__button"
+					onClick={ generate }
+					isBusy={ isLoading }
+					disabled={ isBusy || !! unavailableMessage }
+					accessibleWhenDisabled
+					aria-describedby={ descriptionId }
+				>
+					{ isLoading
+						? __( 'Summarizing…', 'ai' )
+						: __( 'Summarize changes', 'ai' ) }
+				</Button>
+			) }
 
 			{ error && (
 				<Notice status="error" isDismissible={ false }>
-					{ error }
+					{ decodeEntities( error ) }
 					{ connectorsUrl && ! isProviderAvailable() && (
 						<>
 							{ ' ' }
@@ -106,13 +118,21 @@ export default function SummaryPanel( {
 			) }
 
 			{ result && (
-				<div className="ai-revision-change-summary__result">
-					{ result.summary && <p>{ result.summary }</p> }
+				<div
+					ref={ resultRef }
+					tabIndex={ -1 }
+					className="ai-revision-change-summary__result"
+				>
+					{ result.summary && (
+						<p>{ decodeEntities( result.summary ) }</p>
+					) }
 
 					{ result.changes.length > 0 && (
 						<ul className="ai-revision-change-summary__changes">
 							{ result.changes.map( ( change, index ) => (
-								<li key={ index }>{ change }</li>
+								<li key={ index }>
+									{ decodeEntities( change ) }
+								</li>
 							) ) }
 						</ul>
 					) }

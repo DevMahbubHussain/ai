@@ -10,16 +10,17 @@ The Revision Change Summary experiment explains, in plain language, what changed
 
 The revisions screens show an exact comparison of two revisions, which can be slow to read on long posts. With this experiment enabled:
 
-- **Visual revisions (block editor):** open a revision, then click the "Change summary" button in the revisions header. A sidebar opens with a "Summarize changes" button. The selected revision is compared with the revision before it, the same comparison core shows.
-- **Classic revisions screen (`revision.php`):** a "Summarize changes" panel appears below the revision slider. It compares the two revisions shown, including in "Compare any two revisions" mode. Sites with meta boxes in the editor always use this screen.
+- **Visual revisions (block editor):** open a revision. A "Change summary" panel with a "Summarize changes" button appears in the Revision tab of the editor sidebar. The selected revision is compared with the revision before it, the same comparison core shows.
+- **Classic revisions screen (`revision.php`):** a "Change summary" panel with a "Summarize changes" button appears below the revision slider. It compares the two revisions shown, including in "Compare any two revisions" mode. Sites with meta boxes in the editor always use this screen.
 
-The result is a short summary plus a list of up to 10 changes, for example "Rewrote the introduction and added a pricing section." It covers changes to the title, content and excerpt.
+The result is a short summary plus a list of up to 10 changes, for example "Rewrote the introduction and added a pricing section." It covers changes to the title and content, the fields shown on the revisions screens.
 
 **Key Features:**
 
 - Generates only when the user clicks the button
 - Read-only: never edits, saves or applies anything
-- Results are kept for the page view, so moving back to a summarized revision shows its summary again
+- One summary is generated at a time, and the button is hidden once a summary is shown
+- The latest result is kept for the page view, so moving back to that revision shows its summary again
 - Screen reader announcements for progress, results and errors
 
 ### For Developers
@@ -65,27 +66,30 @@ array(
 
 ### How the Diff Is Built
 
-1. Title and excerpt are compared as plain text.
-2. Content is split into one line per block (nested blocks included), using the saved block markup. Blocks, shortcodes and dynamic content are **not rendered**, so nothing runs and the result reflects the revision, not the current site.
+1. The title is compared as plain text.
+2. Content is split into one line per block (nested blocks included), using the saved block markup. Classic (non-block) content is split into paragraphs, also when it was saved without line breaks. Blocks, shortcodes and dynamic content are **not rendered**, so nothing runs and the result reflects the revision, not the current site.
 3. Lines are normalized with `normalize_content()` and compared with core's `Text_Diff`. Removed lines start with `- `, added lines with `+ `, and one unchanged line of context is kept around each change.
-4. If nothing changed in the title, content or excerpt (for example, only meta changed), a fixed message is returned and **no model request is made**.
-5. Diffs longer than the limit are cut on a line boundary and `truncated` is set to `true`.
+4. Angle brackets in the diff are escaped before it is wrapped in `<changes>` tags, so revision text can't break out of them.
+5. If nothing changed in the title or content (for example, only meta changed), a fixed message is returned and **no model request is made**.
+6. Diffs longer than the limit are cut, on a line boundary when one is close, and `truncated` is set to `true`.
 
 ### Permissions
 
 - The user must be able to edit the post (`edit_post`), the same check core uses for revisions.
+- Both revisions must pass `read_post`, so plugins that limit access to single revisions through `map_meta_cap` are respected.
 - Both revisions must belong to that post. Otherwise the request fails with `invalid_revision`.
-- The post type must be shown in REST and support revisions.
+- The post type must be shown in REST and support revisions, and revisions must be turned on for the post (`wp_revisions_enabled()`).
 
 ### Errors
 
 | Code | When |
 | --- | --- |
 | `post_not_found` | The post doesn't exist. |
-| `insufficient_capabilities` | The user can't edit the post. |
-| `invalid_revision` | An ID is not a revision of the post. |
-| `same_revision` | Both IDs are the same revision. |
-| `no_previous_revision` | No `from_revision_id` was given and the revision is the oldest. |
+| `insufficient_capabilities` | The user can't edit the post or read one of the revisions. |
+| `revisions_disabled` | Revisions are turned off for the post. |
+| `invalid_revision` | An ID is not a revision of the post (HTTP 400). |
+| `same_revision` | Both IDs are the same revision (HTTP 400). |
+| `no_previous_revision` | No `from_revision_id` was given and the revision is the oldest (HTTP 400). |
 | `invalid_response` / `no_results` | The model returned an unusable response. |
 | `unsupported_model` | No connected provider supports text generation. |
 
@@ -150,8 +154,8 @@ The system instruction, prompt and prompt builder can be changed with the standa
 
 1. Enable the experiment in **Settings > AI** and connect a provider that supports text generation.
 2. Create a post and save it at least three times with different content.
-3. Open the post, then **Revisions** in the document sidebar. Click **Change summary** in the header, then **Summarize changes**.
-4. Move the revision slider. The previous summary is hidden; click **Summarize changes** again for the new revision.
+3. Open the post, then **Revisions** in the document sidebar. In the **Change summary** panel of the Revision tab, click **Summarize changes**.
+4. Move the revision slider. The previous summary is hidden; click **Summarize changes** again for the new revision. While a summary is being generated, the button is disabled for other revisions.
 5. Open **Open classic revisions screen** and repeat. Try **Compare any two revisions**.
 6. Check that the post content is unchanged.
 
@@ -160,11 +164,12 @@ The system instruction, prompt and prompt builder can be changed with the standa
 ### Requirements
 
 - WordPress 7.0+ and a connected AI provider with text generation support.
-- Post types must support revisions and be shown in REST.
+- Post types must support revisions and be shown in REST, with revisions turned on.
 
 ### Limitations
 
-- Core's visual revisions screen has no public extension point. The header button is added to the revisions header markup, and the selected revision is read from the `revision` query arg of the editor URL. If core changes that markup, the button is not shown, but nothing breaks. The classic screen keeps working.
+- Core's visual revisions sidebar has no public extension point (`PluginDocumentSettingPanel` is not shown in revisions mode). The panel is added after the revision summary section of the sidebar, and the selected revision is read from its "Open classic revisions screen" link. If core changes that markup, the panel is not shown, but nothing breaks. The classic screen keeps working.
+- The excerpt is not summarized, because the revisions screens don't show it.
 - Meta and taxonomy changes are not summarized yet.
 - The site editor (templates, template parts, patterns) is not supported yet.
 - When an autosave is a post's only revision, core compares it with the post itself on the classic screen. That comparison can't be summarized.
