@@ -20,8 +20,8 @@ use function WordPress\AI\normalize_content;
 /**
  * Revision change summary WordPress Ability.
  *
- * Summarizes, in plain language, what changed in the title, content and
- * excerpt between two revisions of the same post.
+ * Summarizes, in plain language, what changed in the title and content
+ * between two revisions of the same post.
  *
  * @since x.x.x
  */
@@ -65,16 +65,19 @@ class Revision_Change_Summary extends Abstract_Ability {
 			'properties'           => array(
 				'post_id'          => array(
 					'type'              => 'integer',
+					'minimum'           => 1,
 					'sanitize_callback' => 'absint',
 					'description'       => esc_html__( 'ID of the post the revisions belong to.', 'ai' ),
 				),
 				'revision_id'      => array(
 					'type'              => 'integer',
+					'minimum'           => 1,
 					'sanitize_callback' => 'absint',
 					'description'       => esc_html__( 'ID of the newer revision to compare.', 'ai' ),
 				),
 				'from_revision_id' => array(
 					'type'              => 'integer',
+					'minimum'           => 1,
 					'sanitize_callback' => 'absint',
 					'description'       => esc_html__( 'ID of the older revision to compare against. Defaults to the revision before the newer revision.', 'ai' ),
 				),
@@ -126,48 +129,12 @@ class Revision_Change_Summary extends Abstract_Ability {
 	 * @since x.x.x
 	 */
 	protected function execute_callback( $input ) {
-		$args = wp_parse_args(
-			$input,
-			array(
-				'post_id'          => 0,
-				'revision_id'      => 0,
-				'from_revision_id' => 0,
-			)
-		);
-
-		$post_id = absint( $args['post_id'] );
-
-		$to_revision = $this->get_revision_of_post( absint( $args['revision_id'] ), $post_id );
-		if ( is_wp_error( $to_revision ) ) {
-			return $to_revision;
+		$revisions = $this->get_revisions_to_compare( $input );
+		if ( is_wp_error( $revisions ) ) {
+			return $revisions;
 		}
 
-		if ( ! empty( $args['from_revision_id'] ) ) {
-			$from_revision = $this->get_revision_of_post( absint( $args['from_revision_id'] ), $post_id );
-			if ( is_wp_error( $from_revision ) ) {
-				return $from_revision;
-			}
-		} else {
-			$from_revision = $this->get_previous_revision( $to_revision );
-			if ( ! $from_revision ) {
-				return new WP_Error(
-					'no_previous_revision',
-					esc_html__( 'There is no earlier revision to compare with.', 'ai' )
-				);
-			}
-		}
-
-		if ( $from_revision->ID === $to_revision->ID ) {
-			return new WP_Error(
-				'same_revision',
-				esc_html__( 'Choose two different revisions to compare.', 'ai' )
-			);
-		}
-
-		// Always describe the changes from the older revision to the newer one.
-		if ( $this->is_newer_revision( $from_revision, $to_revision ) ) {
-			[ $from_revision, $to_revision ] = array( $to_revision, $from_revision );
-		}
+		[ $from_revision, $to_revision ] = $revisions;
 
 		$diff = $this->build_diff( $from_revision, $to_revision );
 
@@ -181,7 +148,7 @@ class Revision_Change_Summary extends Abstract_Ability {
 
 		// No text changed (for example only meta, block settings or an image), so don't spend a model request on it.
 		if ( '' === $diff ) {
-			$result['summary'] = __( 'No text changes were found in the title, content, or excerpt between these revisions.', 'ai' );
+			$result['summary'] = __( 'No text changes were found in the title or content between these revisions.', 'ai' );
 			return $result;
 		}
 
@@ -252,7 +219,35 @@ class Revision_Change_Summary extends Abstract_Ability {
 		}
 
 		// Ensure the post type is allowed in REST endpoints and supports revisions.
-		return self::post_type_is_supported( $post->post_type );
+		if ( ! self::post_type_is_supported( $post->post_type ) ) {
+			return false;
+		}
+
+		// Revisions can't be compared when they are turned off for the post.
+		if ( ! wp_revisions_enabled( $post ) ) {
+			return new WP_Error(
+				'revisions_disabled',
+				esc_html__( 'Revisions are turned off for this post.', 'ai' )
+			);
+		}
+
+		// Invalid revision IDs are reported when the ability runs.
+		$revisions = $this->get_revisions_to_compare( $args );
+		if ( is_wp_error( $revisions ) ) {
+			return true;
+		}
+
+		// Plugins can restrict reading single revisions through `map_meta_cap`, so check both.
+		foreach ( $revisions as $revision ) {
+			if ( ! current_user_can( 'read_post', $revision->ID ) ) {
+				return new WP_Error(
+					'insufficient_capabilities',
+					esc_html__( 'You do not have permission to view these revisions.', 'ai' )
+				);
+			}
+		}
+
+		return true;
 	}
 
 	/**
@@ -285,6 +280,66 @@ class Revision_Change_Summary extends Abstract_Ability {
 	}
 
 	/**
+	 * Returns the two revisions to compare, the older one first.
+	 *
+	 * Without `from_revision_id`, the revision saved just before `revision_id`
+	 * is used.
+	 *
+	 * @since x.x.x
+	 *
+	 * @param mixed $input The ability input.
+	 * @return array{0: \WP_Post, 1: \WP_Post}|\WP_Error The older and newer revision, or WP_Error if they can't be compared.
+	 */
+	private function get_revisions_to_compare( $input ) {
+		$args = wp_parse_args(
+			$input,
+			array(
+				'post_id'          => 0,
+				'revision_id'      => 0,
+				'from_revision_id' => 0,
+			)
+		);
+
+		$post_id = absint( $args['post_id'] );
+
+		$to_revision = $this->get_revision_of_post( absint( $args['revision_id'] ), $post_id );
+		if ( is_wp_error( $to_revision ) ) {
+			return $to_revision;
+		}
+
+		if ( ! empty( $args['from_revision_id'] ) ) {
+			$from_revision = $this->get_revision_of_post( absint( $args['from_revision_id'] ), $post_id );
+			if ( is_wp_error( $from_revision ) ) {
+				return $from_revision;
+			}
+		} else {
+			$from_revision = $this->get_previous_revision( $to_revision );
+			if ( ! $from_revision ) {
+				return new WP_Error(
+					'no_previous_revision',
+					esc_html__( 'There is no earlier revision to compare with.', 'ai' ),
+					array( 'status' => 400 )
+				);
+			}
+		}
+
+		if ( $from_revision->ID === $to_revision->ID ) {
+			return new WP_Error(
+				'same_revision',
+				esc_html__( 'Choose two different revisions to compare.', 'ai' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		// Always describe the changes from the older revision to the newer one.
+		if ( $this->is_newer_revision( $from_revision, $to_revision ) ) {
+			return array( $to_revision, $from_revision );
+		}
+
+		return array( $from_revision, $to_revision );
+	}
+
+	/**
 	 * Returns a revision, making sure it belongs to the given post.
 	 *
 	 * @since x.x.x
@@ -302,7 +357,8 @@ class Revision_Change_Summary extends Abstract_Ability {
 			return new WP_Error(
 				'invalid_revision',
 				/* translators: %d: Revision ID. */
-				sprintf( esc_html__( 'Revision with ID %d is not a revision of this post.', 'ai' ), $revision_id )
+				sprintf( esc_html__( 'Revision with ID %d is not a revision of this post.', 'ai' ), $revision_id ),
+				array( 'status' => 400 )
 			);
 		}
 
@@ -313,8 +369,7 @@ class Revision_Change_Summary extends Abstract_Ability {
 	 * Returns the revision saved just before the given revision.
 	 *
 	 * Uses the same order as the visual revisions screen (newest first, by
-	 * date and then ID), so autosaves are included. Revisions are found even
-	 * when revisions are now turned off for the post, as long as they exist.
+	 * date and then ID), so autosaves are included.
 	 *
 	 * @since x.x.x
 	 *
@@ -330,10 +385,9 @@ class Revision_Change_Summary extends Abstract_Ability {
 				wp_get_post_revisions(
 					(int) $revision->post_parent,
 					array(
-						'orderby'       => 'date ID',
-						'order'         => 'DESC',
-						'fields'        => 'ids',
-						'check_enabled' => false,
+						'orderby' => 'date ID',
+						'order'   => 'DESC',
+						'fields'  => 'ids',
 					)
 				)
 			)
@@ -370,7 +424,7 @@ class Revision_Change_Summary extends Abstract_Ability {
 	}
 
 	/**
-	 * Builds a compact, line-based diff of the title, content and excerpt.
+	 * Builds a compact, line-based diff of the title and content.
 	 *
 	 * @since x.x.x
 	 *
@@ -381,7 +435,6 @@ class Revision_Change_Summary extends Abstract_Ability {
 	protected function build_diff( WP_Post $from, WP_Post $to ): string {
 		$fields = array(
 			'Title'   => array( $this->get_plain_lines( $from->post_title ), $this->get_plain_lines( $to->post_title ) ),
-			'Excerpt' => array( $this->get_plain_lines( $from->post_excerpt ), $this->get_plain_lines( $to->post_excerpt ) ),
 			'Content' => array( $this->get_content_lines( $from->post_content ), $this->get_content_lines( $to->post_content ) ),
 		);
 
@@ -401,7 +454,7 @@ class Revision_Change_Summary extends Abstract_Ability {
 	}
 
 	/**
-	 * Splits plain text, like a title or excerpt, into normalized lines.
+	 * Splits plain text, like a title, into normalized lines.
 	 *
 	 * @since x.x.x
 	 *
@@ -409,9 +462,25 @@ class Revision_Change_Summary extends Abstract_Ability {
 	 * @return list<string> The normalized, non-empty lines.
 	 */
 	private function get_plain_lines( string $text ): array {
-		$lines = preg_split( '/\n\s*\n/', $text );
+		return $this->normalize_lines( $this->split_paragraphs( $text ) );
+	}
 
-		return $this->normalize_lines( false === $lines ? array( $text ) : $lines );
+	/**
+	 * Splits text or HTML into paragraphs.
+	 *
+	 * Splits on blank lines and after block-level closing tags, so HTML saved
+	 * without line breaks, like imported content, isn't one long line.
+	 *
+	 * @since x.x.x
+	 *
+	 * @param string $text The text or HTML.
+	 * @return list<string> The paragraphs.
+	 */
+	private function split_paragraphs( string $text ): array {
+		$text  = preg_replace( '#(</(?:p|h[1-6]|li|dt|dd|blockquote|pre|div|figure|figcaption|table|tr)>)#i', "\$1\n\n", $text ) ?? $text;
+		$parts = preg_split( '/\n\s*\n/', $text );
+
+		return false === $parts ? array( $text ) : $parts;
 	}
 
 	/**
@@ -454,8 +523,7 @@ class Revision_Change_Summary extends Abstract_Ability {
 
 			if ( empty( $block['blockName'] ) ) {
 				// Freeform (classic) content between blocks can hold several paragraphs.
-				$parts = preg_split( '/\n\s*\n/', $inner_html );
-				$texts = array_merge( $texts, false === $parts ? array( $inner_html ) : $parts );
+				$texts = array_merge( $texts, $this->split_paragraphs( $inner_html ) );
 			} else {
 				$texts[] = $inner_html;
 			}
@@ -620,7 +688,10 @@ class Revision_Change_Summary extends Abstract_Ability {
 	}
 
 	/**
-	 * Cuts the diff to the maximum length on a line boundary.
+	 * Cuts the diff to the maximum length, on a line boundary when possible.
+	 *
+	 * A single changed line can be very long, for example a large HTML block.
+	 * The diff is then cut inside that line, so its start is still sent.
 	 *
 	 * @since x.x.x
 	 *
@@ -629,11 +700,13 @@ class Revision_Change_Summary extends Abstract_Ability {
 	 * @return string The shortened diff.
 	 */
 	private function truncate_diff( string $diff, int $max_length ): string {
-		$diff     = mb_substr( $diff, 0, $max_length );
-		$last_new = mb_strrpos( $diff, "\n" );
+		$diff = mb_substr( $diff, 0, $max_length );
 
-		if ( false !== $last_new && $last_new > 0 ) {
-			$diff = mb_substr( $diff, 0, $last_new );
+		// "\n" is a single byte in UTF-8, so byte offsets are safe here.
+		$last_new = strrpos( $diff, "\n" );
+
+		if ( false !== $last_new && $last_new >= strlen( $diff ) / 2 ) {
+			$diff = substr( $diff, 0, $last_new );
 		}
 
 		return $diff;
@@ -650,7 +723,8 @@ class Revision_Change_Summary extends Abstract_Ability {
 	 * @return array{summary: string, changes: list<string>}|\WP_Error The summary and changes, or WP_Error on failure.
 	 */
 	protected function generate_summary( string $diff, bool $truncated, WP_Post $revision ) {
-		$prompt = '<changes>' . $diff . '</changes>';
+		// Escape angle brackets so the revision text can't close the <changes> tag.
+		$prompt = '<changes>' . str_replace( array( '<', '>' ), array( '&lt;', '&gt;' ), $diff ) . '</changes>';
 
 		if ( $truncated ) {
 			$prompt .= "\n\n<note>The changes were too long and have been cut. Only the first part is shown.</note>";
