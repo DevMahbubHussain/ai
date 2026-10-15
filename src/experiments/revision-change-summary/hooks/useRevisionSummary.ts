@@ -26,6 +26,14 @@ interface SummaryState {
 	result: RevisionChangeSummaryResult | null;
 }
 
+export interface RevisionSummary {
+	isLoading: boolean;
+	isBusy: boolean;
+	error: string | null;
+	result: RevisionChangeSummaryResult | null;
+	generate: () => Promise< void >;
+}
+
 /**
  * Returns the key that identifies a pair of revisions.
  *
@@ -45,8 +53,9 @@ function getKey(
 /**
  * Generates and tracks the summary of changes for the selected revisions.
  *
- * Generation only starts when `generate` is called. Only the latest request
- * is kept. Its result is shown again if the user moves back to the same
+ * Generation only starts when `generate` is called, and only one request runs
+ * at a time, so moving to other revisions mid-request can't start another.
+ * The latest result is shown again if the user moves back to the same
  * revisions, and is never shown for other revisions.
  *
  * @param postId         The post ID.
@@ -58,11 +67,12 @@ export function useRevisionSummary(
 	postId: number,
 	revisionId: number | null,
 	fromRevisionId?: number | null | undefined
-) {
+): RevisionSummary {
 	const key = revisionId
 		? getKey( postId, revisionId, fromRevisionId )
 		: null;
 	const latestKey = useRef( key );
+	const isRunning = useRef( false );
 	const [ state, setState ] = useState< SummaryState >( {
 		key: null,
 		isLoading: false,
@@ -85,7 +95,7 @@ export function useRevisionSummary(
 			  };
 
 	const generate = useCallback( async () => {
-		if ( ! key || ! revisionId ) {
+		if ( ! key || ! revisionId || isRunning.current ) {
 			return;
 		}
 
@@ -99,6 +109,7 @@ export function useRevisionSummary(
 			return;
 		}
 
+		isRunning.current = true;
 		setState( { key, isLoading: true, error: null, result: null } );
 		speak( __( 'Summarizing changes…', 'ai' ) );
 
@@ -129,11 +140,12 @@ export function useRevisionSummary(
 				throw new Error( __( 'Invalid response from API.', 'ai' ) );
 			}
 
-			setState( ( previous ) =>
-				previous.key === key
-					? { key, isLoading: false, error: null, result: response }
-					: previous
-			);
+			setState( {
+				key,
+				isLoading: false,
+				error: null,
+				result: response,
+			} );
 
 			if ( latestKey.current === key ) {
 				speak( __( 'Summary of changes is ready.', 'ai' ) );
@@ -144,20 +156,19 @@ export function useRevisionSummary(
 				__( 'Could not summarize the changes. Please try again.', 'ai' )
 			);
 
-			setState( ( previous ) =>
-				previous.key === key
-					? { key, isLoading: false, error: message, result: null }
-					: previous
-			);
+			setState( { key, isLoading: false, error: message, result: null } );
 
 			if ( latestKey.current === key ) {
 				speak( message, 'assertive' );
 			}
+		} finally {
+			isRunning.current = false;
 		}
 	}, [ key, postId, revisionId, fromRevisionId ] );
 
 	return {
 		isLoading: current.isLoading,
+		isBusy: state.isLoading,
 		error: current.error,
 		result: current.result,
 		generate,

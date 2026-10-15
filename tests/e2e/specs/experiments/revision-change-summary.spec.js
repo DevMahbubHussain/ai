@@ -82,12 +82,13 @@ test.describe( 'Revision Change Summary Experiment', () => {
 				.set( 'core/edit-post', 'welcomeGuide', false )
 		);
 
-		const headerButton = page.getByRole( 'button', {
+		// The panel is shown in the Revision tab of the editor sidebar.
+		const sidebar = page.getByRole( 'region', { name: 'Editor settings' } );
+		const panelToggle = sidebar.getByRole( 'button', {
 			name: 'Change summary',
 		} );
-		await expect( headerButton ).toBeVisible();
-		await headerButton.click();
-		await expect( headerButton ).toHaveAttribute( 'aria-expanded', 'true' );
+		await expect( panelToggle ).toBeVisible();
+		await expect( panelToggle ).toHaveAttribute( 'aria-expanded', 'true' );
 
 		const summarizeButton = page.getByRole( 'button', {
 			name: 'Summarize changes',
@@ -102,9 +103,14 @@ test.describe( 'Revision Change Summary Experiment', () => {
 		await expect(
 			page.getByText( 'Added a closing paragraph with a call to action.' )
 		).toBeVisible();
+
+		// The button is removed, so keyboard focus moves to the summary.
 		await expect(
-			page.getByRole( 'button', { name: 'Regenerate summary' } )
-		).toBeVisible();
+			page.locator( '.ai-revision-change-summary__result' )
+		).toBeFocused();
+
+		// The summary of fixed revisions is not generated again.
+		await expect( summarizeButton ).toHaveCount( 0 );
 
 		// The post itself is not changed.
 		const post = await requestUtils.rest( {
@@ -129,9 +135,87 @@ test.describe( 'Revision Change Summary Experiment', () => {
 			`revision=${ revisionIds[ 0 ] }`
 		);
 
-		await page.getByRole( 'button', { name: 'Summarize changes' } ).click();
+		const summarizeButton = page.getByRole( 'button', {
+			name: 'Summarize changes',
+		} );
+		await summarizeButton.click();
 
 		await expect( page.getByText( SUMMARY_TEXT ) ).toBeVisible();
+		await expect( summarizeButton ).toHaveCount( 0 );
+	} );
+
+	test( 'Generates only one summary at a time', async ( {
+		admin,
+		page,
+		requestUtils,
+	} ) => {
+		await enableExperiment( admin, page, EXPERIMENT_LABEL );
+
+		const { postId } = await createPostWithRevisions( requestUtils );
+
+		// One more revision, so the previous revision can be summarized too.
+		await requestUtils.rest( {
+			method: 'POST',
+			path: `/wp/v2/posts/${ postId }`,
+			data: {
+				content:
+					'<!-- wp:paragraph --><p>Fourth introduction.</p><!-- /wp:paragraph -->',
+			},
+		} );
+		const revisions = await requestUtils.rest( {
+			path: `/wp/v2/posts/${ postId }/revisions`,
+		} );
+
+		// Hold the first response so a second request could be started meanwhile.
+		let requests = 0;
+		let release;
+		const released = new Promise( ( resolve ) => ( release = resolve ) );
+		await page.route(
+			/revision-change-summary(\/|%2F)run/i,
+			async ( route ) => {
+				requests++;
+				await released;
+				await route.continue();
+			}
+		);
+
+		await admin.visitAdminPage(
+			'revision.php',
+			`revision=${ revisions[ 0 ].id }`
+		);
+
+		const summarizeButton = page.getByRole( 'button', {
+			name: 'Summarize changes',
+		} );
+		await summarizeButton.click();
+		await expect(
+			page.getByRole( 'button', { name: 'Summarizing…' } )
+		).toBeVisible();
+
+		// Move to the previous revision while the summary is generated.
+		await page.getByRole( 'button', { name: 'Previous' } ).click();
+
+		await expect(
+			page.getByText(
+				'A summary of other revisions is still being generated.',
+				{
+					exact: false,
+				}
+			)
+		).toBeVisible();
+		await expect( summarizeButton ).toBeDisabled();
+
+		release();
+
+		// The finished summary is not shown for other revisions.
+		await expect( summarizeButton ).toBeEnabled();
+		await expect( page.getByText( SUMMARY_TEXT ) ).toHaveCount( 0 );
+
+		// It is shown when moving back to its revisions.
+		await page.getByRole( 'button', { name: 'Next' } ).click();
+		await expect( page.getByText( SUMMARY_TEXT ) ).toBeVisible();
+
+		expect( requests ).toBe( 1 );
 	} );
 
 	test( 'Disables the action for the oldest revision on the classic screen', async ( {

@@ -13,6 +13,7 @@ import { __ } from '@wordpress/i18n';
  * Internal dependencies
  */
 import SummaryPanel from './components/SummaryPanel';
+import { useRevisionSummary } from './hooks/useRevisionSummary';
 import './index.scss';
 
 interface RevisionModel {
@@ -87,9 +88,11 @@ function ClassicSummary( {
 		};
 	}, [ model ] );
 
+	const summary = useRevisionSummary( postId, selected.to, selected.from );
+
 	let unavailableMessage: string | undefined;
 
-	if ( ! selected.from ) {
+	if ( ! selected.from || ! selected.to ) {
 		unavailableMessage = __(
 			'There is no earlier revision to compare with.',
 			'ai'
@@ -103,12 +106,15 @@ function ClassicSummary( {
 	}
 
 	return (
-		<SummaryPanel
-			postId={ postId }
-			revisionId={ selected.to }
-			fromRevisionId={ selected.from }
-			unavailableMessage={ unavailableMessage }
-		/>
+		<>
+			<h2 className="ai-revision-change-summary-classic__title">
+				{ __( 'Change summary', 'ai' ) }
+			</h2>
+			<SummaryPanel
+				summary={ summary }
+				unavailableMessage={ unavailableMessage }
+			/>
+		</>
 	);
 }
 
