@@ -20,9 +20,6 @@ use function WordPress\AI\normalize_content;
 /**
  * Revision change summary WordPress Ability.
  *
- * Summarizes, in plain language, what changed in the title and content
- * between two revisions of the same post.
- *
  * @since x.x.x
  */
 class Revision_Change_Summary extends Abstract_Ability {
@@ -48,9 +45,6 @@ class Revision_Change_Summary extends Abstract_Ability {
 	/**
 	 * The minimum number of change items shown as a list.
 	 *
-	 * With fewer changes, the summary alone describes them, as a short list
-	 * would only repeat it. The list is kept if the summary is empty.
-	 *
 	 * @since x.x.x
 	 *
 	 * @var int
@@ -59,9 +53,6 @@ class Revision_Change_Summary extends Abstract_Ability {
 
 	/**
 	 * The line that stands for unchanged lines left out of the diff.
-	 *
-	 * It has no "- ", "+ " or two-space prefix, so it can't be mistaken for a
-	 * line of the post.
 	 *
 	 * @since x.x.x
 	 *
@@ -170,7 +161,7 @@ class Revision_Change_Summary extends Abstract_Ability {
 			'revision_id'      => $to_revision->ID,
 		);
 
-		// No text changed (for example only meta, block settings or an image), so don't spend a model request on it.
+		// No text changed so don't spend a model request on it.
 		if ( '' === $diff ) {
 			$result['summary'] = __( 'No text changes were found in the title or content between these revisions.', 'ai' );
 			return $result;
@@ -227,10 +218,6 @@ class Revision_Change_Summary extends Abstract_Ability {
 
 	/**
 	 * Removes changes that repeat the summary or an earlier change.
-	 *
-	 * The prompt asks the model not to repeat itself, but some models still
-	 * copy the summary into the list, which would show the same text twice.
-	 * Changes without any letters or numbers, like "—", are removed too.
 	 *
 	 * @since x.x.x
 	 *
@@ -299,7 +286,7 @@ class Revision_Change_Summary extends Abstract_Ability {
 			);
 		}
 
-		// Revisions can only be compared by users who can edit the post, same as core.
+		// Revisions can only be compared by users who can edit the post.
 		if ( ! current_user_can( 'edit_post', $post_id ) ) {
 			return new WP_Error(
 				'insufficient_capabilities',
@@ -457,9 +444,6 @@ class Revision_Change_Summary extends Abstract_Ability {
 	/**
 	 * Returns the revision saved just before the given revision.
 	 *
-	 * Uses the same order as the visual revisions screen (newest first, by
-	 * date and then ID), so autosaves are included.
-	 *
 	 * @since x.x.x
 	 *
 	 * @param \WP_Post $revision The newer revision.
@@ -495,8 +479,6 @@ class Revision_Change_Summary extends Abstract_Ability {
 
 	/**
 	 * Checks whether the first revision was saved after the second one.
-	 *
-	 * Uses the local post date, then the ID, like the revisions screens.
 	 *
 	 * @since x.x.x
 	 *
@@ -557,9 +539,6 @@ class Revision_Change_Summary extends Abstract_Ability {
 	/**
 	 * Splits text or HTML into paragraphs.
 	 *
-	 * Splits on blank lines and after block-level closing tags, so HTML saved
-	 * without line breaks, like imported content, isn't one long line.
-	 *
 	 * @since x.x.x
 	 *
 	 * @param string $text The text or HTML.
@@ -574,10 +553,6 @@ class Revision_Change_Summary extends Abstract_Ability {
 
 	/**
 	 * Splits post content into one normalized line per block.
-	 *
-	 * Blocks are read from their saved markup only. They are never rendered,
-	 * so dynamic blocks and shortcodes don't run and don't show the current
-	 * state of the site instead of the revision.
 	 *
 	 * @since x.x.x
 	 *
@@ -654,11 +629,6 @@ class Revision_Change_Summary extends Abstract_Ability {
 	/**
 	 * Diffs two lists of lines into a compact format the model can read.
 	 *
-	 * Removed lines start with "- ", added lines with "+ ", and unchanged
-	 * lines next to a change are kept as context and start with two spaces.
-	 * Other unchanged lines are replaced with a marker line, see
-	 * get_context_lines().
-	 *
 	 * @since x.x.x
 	 *
 	 * @param list<string> $from_lines The older lines.
@@ -711,11 +681,6 @@ class Revision_Change_Summary extends Abstract_Ability {
 
 	/**
 	 * Returns the unchanged lines kept as context around a change.
-	 *
-	 * Keeps the line next to each change and replaces the rest with a marker
-	 * line, so the model knows that more of the post is there. Lines are only
-	 * left out when that saves more than one line, so up to three lines
-	 * between two changes, or two lines at the start or end, are kept.
 	 *
 	 * @since x.x.x
 	 *
@@ -775,9 +740,6 @@ class Revision_Change_Summary extends Abstract_Ability {
 
 	/**
 	 * Cuts the diff to the maximum length, on a line boundary when possible.
-	 *
-	 * A single changed line can be very long, for example a large HTML block.
-	 * The diff is then cut inside that line, so its start is still sent.
 	 *
 	 * @since x.x.x
 	 *
