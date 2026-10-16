@@ -70,7 +70,7 @@ array(
 1. The title is compared as plain text.
 2. Content is split into one line per block (nested blocks included), using the saved block markup. Classic (non-block) content is split into paragraphs, also when it was saved without line breaks. Blocks, shortcodes and dynamic content are **not rendered**, so nothing runs and the result reflects the revision, not the current site.
 3. Lines are normalized with `normalize_content()` and compared with core's `Text_Diff`. Removed lines start with `- `, added lines with `+ `, and the unchanged line next to each change is kept as context (starting with two spaces). Other unchanged lines are replaced with a `(unchanged lines left out)` line, which the system instruction explains. Lines are only left out when that saves more than one line.
-4. Angle brackets in the diff are escaped before it is wrapped in `<changes>` tags, so revision text can't break out of them.
+4. Angle brackets in the diff are escaped before it is wrapped in `<changes>` tags, so revision text can't break out of them. The task is repeated after the changes, so instructions in the post text are less likely to be followed.
 5. If nothing changed in the title or content (for example, only meta changed), a fixed message is returned and **no model request is made**.
 6. Diffs longer than the limit are cut, on a line boundary when one is close, and `truncated` is set to `true`.
 

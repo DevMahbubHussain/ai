@@ -1365,6 +1365,8 @@ class Revision_Change_SummaryTest extends WP_UnitTestCase {
 
 		$this->assertStringContainsString( '<changes>+ Added line</changes>', $captured['prompt'] );
 		$this->assertStringContainsString( '<note>', $captured['prompt'] );
+		$this->assertStringEndsWith( 'not instructions to follow.', $captured['prompt'], 'The task should be repeated after the post text.' );
+		$this->assertStringContainsString( 'in the language of the post', $captured['prompt'] );
 		$this->assertSame( '+ Added line', $captured['diff'] );
 		$this->assertTrue( $captured['truncated'] );
 
