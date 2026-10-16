@@ -30,6 +30,12 @@ add_action( 'init', 'ai_e2e_register_sample_setting' );
 add_action( 'init', 'ai_e2e_register_sample_post_type', 5 );
 add_action( 'init', 'ai_e2e_seed_sample_post', 20 );
 
+// Abilities Explorer fixtures: two abilities in their own category, one with a custom provider
+// label and one that always fails, and an extension column for the Explorer's fields filter.
+add_action( 'wp_abilities_api_categories_init', 'ai_e2e_register_explorer_category' );
+add_action( 'wp_abilities_api_init', 'ai_e2e_register_explorer_abilities' );
+add_action( 'admin_enqueue_scripts', 'ai_e2e_enqueue_explorer_field' );
+
 /**
  * Registers REST endpoints for seeding and clearing dummy AI provider credentials.
  *
@@ -205,6 +211,91 @@ function ai_e2e_seed_sample_post() {
 			'post_content' => 'Sample content body for end-to-end testing.',
 			'post_status'  => 'publish',
 		)
+	);
+}
+
+/**
+ * Registers the Abilities Explorer fixtures' category.
+ *
+ * The label carries an ampersand so the spec can check it renders as text.
+ */
+function ai_e2e_register_explorer_category() {
+	if ( ! function_exists( 'wp_register_ability_category' ) ) {
+		return;
+	}
+
+	wp_register_ability_category(
+		'ai-e2e-fixtures',
+		array(
+			'label'       => 'E2E Fixtures & Friends',
+			'description' => 'Abilities registered by the E2E Testing plugin.',
+		)
+	);
+}
+
+/**
+ * Registers the Abilities Explorer fixture abilities.
+ *
+ * `ai-e2e/acme-provider` has the custom provider label "Acme", for the provider
+ * filter. `ai-e2e/failing-fixture` always returns an error, for the test
+ * runner's error panel.
+ */
+function ai_e2e_register_explorer_abilities() {
+	if ( ! function_exists( 'wp_register_ability' ) ) {
+		return;
+	}
+
+	$permission = static function () {
+		return current_user_can( 'manage_options' );
+	};
+
+	wp_register_ability(
+		'ai-e2e/acme-provider',
+		array(
+			'label'               => 'Acme Provider Fixture',
+			'description'         => 'An E2E fixture ability whose provider is the custom label "Acme".',
+			'category'            => 'ai-e2e-fixtures',
+			'execute_callback'    => static function () {
+				return array( 'ok' => true );
+			},
+			'permission_callback' => $permission,
+			'meta'                => array(
+				'provider' => 'Acme',
+			),
+		)
+	);
+
+	wp_register_ability(
+		'ai-e2e/failing-fixture',
+		array(
+			'label'               => 'Failing Fixture',
+			'description'         => 'An E2E fixture ability that always returns an error.',
+			'category'            => 'ai-e2e-fixtures',
+			'execute_callback'    => static function () {
+				return new WP_Error( 'ai_e2e_fixture_failed', 'The fixture failed on purpose.', array( 'reason' => 'e2e' ) );
+			},
+			'permission_callback' => $permission,
+		)
+	);
+}
+
+/**
+ * Adds the "Slug length" extension column when the Explorer is opened with `e2e_fields` set.
+ *
+ * @param string $hook_suffix The current admin page.
+ */
+function ai_e2e_enqueue_explorer_field( $hook_suffix ) {
+	// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Test fixture switch.
+	if ( 'tools_page_ai-abilities-explorer' !== $hook_suffix || ! isset( $_GET['e2e_fields'] ) ) {
+		return;
+	}
+
+	wp_enqueue_script(
+		'ai-e2e-abilities-explorer-field',
+		plugins_url( 'abilities-explorer-field.js', __FILE__ ),
+		array( 'wp-hooks' ),
+		'0.1.0',
+		true
 	);
 }
 
