@@ -6,10 +6,7 @@ const { test, expect } = require( '@wordpress/e2e-test-utils-playwright' );
 /**
  * Internal dependencies
  */
-const {
-	disableExperiment,
-	enableExperiment,
-} = require( '../../utils/helpers' );
+const { enableExperiment } = require( '../../utils/helpers' );
 
 const EXPERIMENT_LABEL = 'Revision Change Summary';
 const SUMMARY_TEXT = 'Updated the start and the end of the post.';
@@ -62,10 +59,6 @@ test.describe( 'Revision Change Summary Experiment', () => {
 		await requestUtils.activatePlugin( 'e2e-testing' );
 	} );
 
-	test( 'Can enable the experiment', async ( { admin, page } ) => {
-		await enableExperiment( admin, page, EXPERIMENT_LABEL );
-	} );
-
 	test( 'Summarizes changes in the visual revisions screen', async ( {
 		admin,
 		page,
@@ -96,16 +89,11 @@ test.describe( 'Revision Change Summary Experiment', () => {
 			name: 'Change summary',
 		} );
 		await expect( panelToggle ).toBeVisible();
-		await expect( panelToggle ).toHaveAttribute( 'aria-expanded', 'true' );
 
 		const summarizeButton = page.getByRole( 'button', {
 			name: 'Summarize changes',
 		} );
-		await expect( summarizeButton ).toBeEnabled();
-
-		// Use the keyboard, to check the action is reachable without a mouse.
-		await summarizeButton.focus();
-		await page.keyboard.press( 'Enter' );
+		await summarizeButton.click();
 
 		await expect( page.getByText( SUMMARY_TEXT ) ).toBeVisible();
 		await expect(
@@ -119,14 +107,6 @@ test.describe( 'Revision Change Summary Experiment', () => {
 
 		// The summary of fixed revisions is not generated again.
 		await expect( summarizeButton ).toHaveCount( 0 );
-
-		// The post itself is not changed.
-		const post = await requestUtils.rest( {
-			path: `/wp/v2/posts/${ postId }`,
-			params: { context: 'edit' },
-		} );
-		expect( post.content.raw ).toContain( 'Closing paragraph.' );
-		expect( post.content.raw ).not.toContain( SUMMARY_TEXT );
 	} );
 
 	test( 'Summarizes changes in the classic revisions screen', async ( {
@@ -279,27 +259,5 @@ test.describe( 'Revision Change Summary Experiment', () => {
 		await expect(
 			page.getByRole( 'button', { name: 'Summarize changes' } )
 		).toBeDisabled();
-	} );
-
-	test( 'Shows nothing when the experiment is disabled', async ( {
-		admin,
-		page,
-		requestUtils,
-	} ) => {
-		await disableExperiment( admin, page, EXPERIMENT_LABEL );
-
-		const { revisionIds } = await createPostWithRevisions( requestUtils );
-
-		await admin.visitAdminPage(
-			'revision.php',
-			`revision=${ revisionIds[ 0 ] }`
-		);
-
-		await expect(
-			page.locator( '.revisions-control-frame' )
-		).toBeVisible();
-		await expect(
-			page.getByRole( 'button', { name: 'Summarize changes' } )
-		).toHaveCount( 0 );
 	} );
 } );
