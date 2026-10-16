@@ -12,7 +12,7 @@ const {
 } = require( '../../utils/helpers' );
 
 const EXPERIMENT_LABEL = 'Revision Change Summary';
-const SUMMARY_TEXT = 'Rewrote the introduction and added a closing paragraph.';
+const SUMMARY_TEXT = 'Updated the start and the end of the post.';
 
 /**
  * Creates a post with three saved revisions.
@@ -28,14 +28,22 @@ async function createPostWithRevisions( requestUtils ) {
 		status: 'draft',
 	} );
 
-	for ( const content of [
-		'<!-- wp:paragraph --><p>Second introduction.</p><!-- /wp:paragraph -->',
-		'<!-- wp:paragraph --><p>Third introduction.</p><!-- /wp:paragraph --><!-- wp:paragraph --><p>Closing paragraph.</p><!-- /wp:paragraph -->',
+	// The last version has the three changes the mocked summary lists.
+	for ( const data of [
+		{
+			content:
+				'<!-- wp:paragraph --><p>Second introduction.</p><!-- /wp:paragraph -->',
+		},
+		{
+			title: 'Revision Change Summary Test 2.0',
+			content:
+				'<!-- wp:paragraph --><p>Third introduction.</p><!-- /wp:paragraph --><!-- wp:paragraph --><p>Closing paragraph.</p><!-- /wp:paragraph -->',
+		},
 	] ) {
 		await requestUtils.rest( {
 			method: 'POST',
 			path: `/wp/v2/posts/${ post.id }`,
-			data: { content },
+			data,
 		} );
 	}
 
@@ -232,6 +240,39 @@ test.describe( 'Revision Change Summary Experiment', () => {
 			`revision=${ revisionIds[ revisionIds.length - 1 ] }`
 		);
 
+		await expect(
+			page.getByText( 'There is no earlier revision to compare with.' )
+		).toBeVisible();
+		await expect(
+			page.getByRole( 'button', { name: 'Summarize changes' } )
+		).toBeDisabled();
+	} );
+
+	test( 'Disables the action for the oldest revision on the visual screen', async ( {
+		admin,
+		page,
+		requestUtils,
+	} ) => {
+		await enableExperiment( admin, page, EXPERIMENT_LABEL );
+
+		const { postId, revisionIds } =
+			await createPostWithRevisions( requestUtils );
+
+		await admin.visitAdminPage(
+			'post.php',
+			`post=${ postId }&action=edit&revision=${
+				revisionIds[ revisionIds.length - 1 ]
+			}`
+		);
+
+		await page.waitForFunction( () => window?.wp?.data );
+		await page.evaluate( () =>
+			window.wp.data
+				.dispatch( 'core/preferences' )
+				.set( 'core/edit-post', 'welcomeGuide', false )
+		);
+
+		// Same as the classic screen, before anything is generated.
 		await expect(
 			page.getByText( 'There is no earlier revision to compare with.' )
 		).toBeVisible();
