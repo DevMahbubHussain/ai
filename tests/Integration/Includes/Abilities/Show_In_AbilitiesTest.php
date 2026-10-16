@@ -69,7 +69,11 @@ class Show_In_AbilitiesTest extends WP_UnitTestCase {
 				continue;
 			}
 
-			unset( $object->show_in_abilities );
+			if ( property_exists( \WP_Post_Type::class, 'show_in_abilities' ) ) {
+				$object->show_in_abilities = true;
+			} else {
+				unset( $object->show_in_abilities );
+			}
 		}
 
 		parent::tearDown();
@@ -120,6 +124,17 @@ class Show_In_AbilitiesTest extends WP_UnitTestCase {
 		$declared = is_array( $captured ) && array_key_exists( 'show_in_abilities', $captured );
 
 		return $declared;
+	}
+
+	/**
+	 * Checks whether WordPress core declares the post type flag natively.
+	 *
+	 * @since x.x.x
+	 *
+	 * @return bool True when core declares show_in_abilities on WP_Post_Type.
+	 */
+	private function core_declares_post_type_flag(): bool {
+		return property_exists( \WP_Post_Type::class, 'show_in_abilities' );
 	}
 
 	/**
@@ -315,6 +330,10 @@ class Show_In_AbilitiesTest extends WP_UnitTestCase {
 	 * @since 1.2.0
 	 */
 	public function test_marks_curated_registered_post_types(): void {
+		if ( $this->core_declares_post_type_flag() ) {
+			$this->markTestSkipped( 'Core declares show_in_abilities natively; the polyfill stands down.' );
+		}
+
 		// $this->show_in_abilities->register() ran in setUp and patches existing post types.
 		$this->assertNotEmpty( get_post_type_object( 'post' )->show_in_abilities );
 		$this->assertNotEmpty( get_post_type_object( 'page' )->show_in_abilities );
@@ -326,6 +345,10 @@ class Show_In_AbilitiesTest extends WP_UnitTestCase {
 	 * @since 1.2.0
 	 */
 	public function test_filter_marks_curated_post_type(): void {
+		if ( $this->core_declares_post_type_flag() ) {
+			$this->markTestSkipped( 'Core declares show_in_abilities natively; the polyfill stands down.' );
+		}
+
 		$args = $this->show_in_abilities->mark_post_type( array(), 'page' );
 
 		$this->assertTrue( $args['show_in_abilities'] );
@@ -376,6 +399,10 @@ class Show_In_AbilitiesTest extends WP_UnitTestCase {
 	 * @since 1.2.0
 	 */
 	public function test_direct_patch_respects_explicit_false(): void {
+		if ( $this->core_declares_post_type_flag() ) {
+			$this->markTestSkipped( 'Core declares show_in_abilities natively; the polyfill stands down.' );
+		}
+
 		get_post_type_object( 'page' )->show_in_abilities = false;
 
 		$this->show_in_abilities->mark_registered_post_types();
@@ -394,6 +421,10 @@ class Show_In_AbilitiesTest extends WP_UnitTestCase {
 	 * @since 1.2.0
 	 */
 	public function test_core_does_not_yet_declare_the_post_type_flag(): void {
+		if ( $this->core_declares_post_type_flag() ) {
+			$this->markTestSkipped( 'Core now declares show_in_abilities natively; the polyfill has stood down.' );
+		}
+
 		$this->assertFalse(
 			property_exists( \WP_Post_Type::class, 'show_in_abilities' ),
 			'Core now declares show_in_abilities on WP_Post_Type; the polyfill must step aside.'
