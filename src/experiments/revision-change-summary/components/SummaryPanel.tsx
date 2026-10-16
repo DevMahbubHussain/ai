@@ -23,6 +23,7 @@ import type { RevisionSummary } from '../hooks/useRevisionSummary';
 interface SummaryPanelProps {
 	summary: RevisionSummary;
 	unavailableMessage?: string | undefined;
+	isDisabled?: boolean;
 }
 
 /**
@@ -35,10 +36,12 @@ interface SummaryPanelProps {
  * @param props                    Component props.
  * @param props.summary            The summary state for the selected revisions.
  * @param props.unavailableMessage Message shown when a summary can't be made.
+ * @param props.isDisabled         Whether the button is disabled, for example while the revisions are checked.
  */
 export default function SummaryPanel( {
 	summary,
 	unavailableMessage,
+	isDisabled = false,
 }: SummaryPanelProps ) {
 	const { isLoading, isBusy, error, result, generate } = summary;
 	const resultRef = useRef< HTMLDivElement >( null );
@@ -93,7 +96,7 @@ export default function SummaryPanel( {
 					className="ai-revision-change-summary__button"
 					onClick={ generate }
 					isBusy={ isLoading }
-					disabled={ isBusy || !! unavailableMessage }
+					disabled={ isBusy || isDisabled || !! unavailableMessage }
 					accessibleWhenDisabled
 					aria-describedby={ descriptionId }
 				>

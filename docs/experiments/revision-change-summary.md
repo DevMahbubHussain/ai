@@ -21,6 +21,7 @@ Small edits, with one or two changes, get a short summary only, for example "Fix
 - Read-only: never edits, saves or applies anything
 - One summary is generated at a time, and the button is hidden once a summary is shown
 - The latest result is kept for the page view, so moving back to that revision shows its summary again
+- On both screens, the button is disabled for the oldest revision, as there is nothing earlier to compare with
 - Screen reader announcements for progress, results and errors
 
 ### For Developers
@@ -159,8 +160,9 @@ Whatever the prompt asks for, list items that repeat the summary or each other a
 2. Create a post and save it at least three times with different content.
 3. Open the post, then **Revisions** in the document sidebar. In the **Change summary** panel of the Revision tab, click **Summarize changes**.
 4. Move the revision slider. The previous summary is hidden; click **Summarize changes** again for the new revision. While a summary is being generated, the button is disabled for other revisions.
-5. Open **Open classic revisions screen** and repeat. Try **Compare any two revisions**.
-6. Check that the post content is unchanged.
+5. Move the slider to the oldest revision. The button is disabled with "There is no earlier revision to compare with.", before anything is generated.
+6. Open **Open classic revisions screen** and repeat. Try **Compare any two revisions**.
+7. Check that the post content is unchanged.
 
 ## Notes & Considerations
 

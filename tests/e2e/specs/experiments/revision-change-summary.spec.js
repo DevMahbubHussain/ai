@@ -248,6 +248,39 @@ test.describe( 'Revision Change Summary Experiment', () => {
 		).toBeDisabled();
 	} );
 
+	test( 'Disables the action for the oldest revision on the visual screen', async ( {
+		admin,
+		page,
+		requestUtils,
+	} ) => {
+		await enableExperiment( admin, page, EXPERIMENT_LABEL );
+
+		const { postId, revisionIds } =
+			await createPostWithRevisions( requestUtils );
+
+		await admin.visitAdminPage(
+			'post.php',
+			`post=${ postId }&action=edit&revision=${
+				revisionIds[ revisionIds.length - 1 ]
+			}`
+		);
+
+		await page.waitForFunction( () => window?.wp?.data );
+		await page.evaluate( () =>
+			window.wp.data
+				.dispatch( 'core/preferences' )
+				.set( 'core/edit-post', 'welcomeGuide', false )
+		);
+
+		// Same as the classic screen, before anything is generated.
+		await expect(
+			page.getByText( 'There is no earlier revision to compare with.' )
+		).toBeVisible();
+		await expect(
+			page.getByRole( 'button', { name: 'Summarize changes' } )
+		).toBeDisabled();
+	} );
+
 	test( 'Shows nothing when the experiment is disabled', async ( {
 		admin,
 		page,
