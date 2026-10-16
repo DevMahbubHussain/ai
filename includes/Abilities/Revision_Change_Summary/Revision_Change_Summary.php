@@ -46,6 +46,30 @@ class Revision_Change_Summary extends Abstract_Ability {
 	protected const MAX_CHANGES = 10;
 
 	/**
+	 * The minimum number of change items shown as a list.
+	 *
+	 * With fewer changes, the summary alone describes them, as a short list
+	 * would only repeat it. The list is kept if the summary is empty.
+	 *
+	 * @since x.x.x
+	 *
+	 * @var int
+	 */
+	protected const MIN_LISTED_CHANGES = 3;
+
+	/**
+	 * The line that stands for unchanged lines left out of the diff.
+	 *
+	 * It has no "- ", "+ " or two-space prefix, so it can't be mistaken for a
+	 * line of the post.
+	 *
+	 * @since x.x.x
+	 *
+	 * @var string
+	 */
+	protected const OMITTED_LINES_MARKER = '(unchanged lines left out)';
+
+	/**
 	 * {@inheritDoc}
 	 *
 	 * @since x.x.x
@@ -179,6 +203,10 @@ class Revision_Change_Summary extends Abstract_Ability {
 			)
 		);
 
+		// Count the distinct changes before removing the ones that repeat the summary, so a list of three or more keeps its other details.
+		$listed_count = count( $this->remove_repeated_changes( '', $changes ) );
+		$changes      = $this->remove_repeated_changes( $summary, $changes );
+
 		if ( '' === $summary && empty( $changes ) ) {
 			return new WP_Error(
 				'no_results',
@@ -186,10 +214,71 @@ class Revision_Change_Summary extends Abstract_Ability {
 			);
 		}
 
+		// One or two changes are described by the summary, so a list would only repeat it.
+		if ( '' !== $summary && $listed_count < self::MIN_LISTED_CHANGES ) {
+			$changes = array();
+		}
+
 		$result['summary'] = $summary;
 		$result['changes'] = array_slice( $changes, 0, self::MAX_CHANGES );
 
 		return $result;
+	}
+
+	/**
+	 * Removes changes that repeat the summary or an earlier change.
+	 *
+	 * The prompt asks the model not to repeat itself, but some models still
+	 * copy the summary into the list, which would show the same text twice.
+	 * Changes without any letters or numbers, like "—", are removed too.
+	 *
+	 * @since x.x.x
+	 *
+	 * @param string       $summary The summary.
+	 * @param list<string> $changes The changes.
+	 * @return list<string> The changes without repeated ones.
+	 */
+	private function remove_repeated_changes( string $summary, array $changes ): array {
+		$seen = array();
+
+		// Check each sentence of the summary too, as it can be up to two sentences.
+		$sentences   = preg_split( '/(?<=[.!?])\s+|(?<=[。！？])/u', $summary, -1, PREG_SPLIT_NO_EMPTY );
+		$sentences   = false === $sentences ? array() : $sentences;
+		$sentences[] = $summary;
+
+		foreach ( $sentences as $sentence ) {
+			$seen[ $this->get_comparison_key( $sentence ) ] = true;
+		}
+
+		$unique = array();
+
+		foreach ( $changes as $change ) {
+			$key = $this->get_comparison_key( $change );
+
+			if ( '' === $key || isset( $seen[ $key ] ) ) {
+				continue;
+			}
+
+			$seen[ $key ] = true;
+			$unique[]     = $change;
+		}
+
+		return $unique;
+	}
+
+	/**
+	 * Returns text reduced to lowercase letters, marks and numbers, for comparing.
+	 *
+	 * Marks are kept, so words in scripts like Hindi or Thai that differ only
+	 * in a vowel sign stay different.
+	 *
+	 * @since x.x.x
+	 *
+	 * @param string $text The text.
+	 * @return string The comparison key.
+	 */
+	private function get_comparison_key( string $text ): string {
+		return mb_strtolower( preg_replace( '/[^\p{L}\p{M}\p{N}]+/u', '', $text ) ?? $text );
 	}
 
 	/**
@@ -567,6 +656,8 @@ class Revision_Change_Summary extends Abstract_Ability {
 	 *
 	 * Removed lines start with "- ", added lines with "+ ", and unchanged
 	 * lines next to a change are kept as context and start with two spaces.
+	 * Other unchanged lines are replaced with a marker line, see
+	 * get_context_lines().
 	 *
 	 * @since x.x.x
 	 *
@@ -621,7 +712,10 @@ class Revision_Change_Summary extends Abstract_Ability {
 	/**
 	 * Returns the unchanged lines kept as context around a change.
 	 *
-	 * Keeps one line next to each change and replaces the rest with "...".
+	 * Keeps the line next to each change and replaces the rest with a marker
+	 * line, so the model knows that more of the post is there. Lines are only
+	 * left out when that saves more than one line, so up to three lines
+	 * between two changes, or two lines at the start or end, are kept.
 	 *
 	 * @since x.x.x
 	 *
@@ -633,35 +727,27 @@ class Revision_Change_Summary extends Abstract_Ability {
 	private function get_context_lines( array $copied, bool $change_before, bool $change_after ): array {
 		$count = count( $copied );
 
-		if ( 0 === $count ) {
+		if ( 0 === $count || ( ! $change_before && ! $change_after ) ) {
 			return array();
 		}
 
-		$first = '  ' . $copied[0];
-		$final = '  ' . $copied[ $count - 1 ];
+		$lines = array_map(
+			static function ( string $line ): string {
+				return '  ' . $line;
+			},
+			$copied
+		);
 
+		// Only leave lines out when the marker replaces more than one line.
 		if ( $change_before && $change_after ) {
-			if ( $count <= 2 ) {
-				return array_map(
-					static function ( string $line ): string {
-						return '  ' . $line;
-					},
-					$copied
-				);
-			}
-
-			return array( $first, '  ...', $final );
+			return $count <= 3 ? $lines : array( $lines[0], self::OMITTED_LINES_MARKER, $lines[ $count - 1 ] );
 		}
 
-		if ( $change_before ) {
-			return array( $first );
+		if ( $count <= 2 ) {
+			return $lines;
 		}
 
-		if ( $change_after ) {
-			return $count > 1 ? array( '  ...', $final ) : array( $final );
-		}
-
-		return array();
+		return $change_before ? array( $lines[0], self::OMITTED_LINES_MARKER ) : array( self::OMITTED_LINES_MARKER, $lines[ $count - 1 ] );
 	}
 
 	/**

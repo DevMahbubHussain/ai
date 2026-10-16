@@ -13,7 +13,7 @@ The revisions screens show an exact comparison of two revisions, which can be sl
 - **Visual revisions (block editor):** open a revision. A "Change summary" panel with a "Summarize changes" button appears in the Revision tab of the editor sidebar. The selected revision is compared with the revision before it, the same comparison core shows.
 - **Classic revisions screen (`revision.php`):** a "Change summary" panel with a "Summarize changes" button appears below the revision slider. It compares the two revisions shown, including in "Compare any two revisions" mode. Sites with meta boxes in the editor always use this screen.
 
-The result is a short summary plus a list of up to 10 changes, for example "Rewrote the introduction and added a pricing section." It covers changes to the title and content, the fields shown on the revisions screens.
+Small edits, with one or two changes, get a short summary only, for example "Fixed a typo in the second paragraph." Larger edits get a one-sentence overview plus a list of up to 10 specific changes. List items that repeat the summary or each other are removed. The summary covers changes to the title and content, the fields shown on the revisions screens.
 
 **Key Features:**
 
@@ -55,8 +55,8 @@ If `from_revision_id` is left out, the revision saved just before `revision_id` 
 array(
     'type'       => 'object',
     'properties' => array(
-        'summary'          => array( 'type' => 'string' ),  // 1-2 sentence summary.
-        'changes'          => array( 'type' => 'array', 'items' => array( 'type' => 'string' ) ), // Up to 10 changes.
+        'summary'          => array( 'type' => 'string' ),  // Short summary, or an overview when changes are listed.
+        'changes'          => array( 'type' => 'array', 'items' => array( 'type' => 'string' ) ), // Up to 10 changes, or empty for small edits.
         'truncated'        => array( 'type' => 'boolean' ), // True when only part of the changes was summarized.
         'from_revision_id' => array( 'type' => 'integer' ),
         'revision_id'      => array( 'type' => 'integer' ),
@@ -68,7 +68,7 @@ array(
 
 1. The title is compared as plain text.
 2. Content is split into one line per block (nested blocks included), using the saved block markup. Classic (non-block) content is split into paragraphs, also when it was saved without line breaks. Blocks, shortcodes and dynamic content are **not rendered**, so nothing runs and the result reflects the revision, not the current site.
-3. Lines are normalized with `normalize_content()` and compared with core's `Text_Diff`. Removed lines start with `- `, added lines with `+ `, and one unchanged line of context is kept around each change.
+3. Lines are normalized with `normalize_content()` and compared with core's `Text_Diff`. Removed lines start with `- `, added lines with `+ `, and the unchanged line next to each change is kept as context (starting with two spaces). Other unchanged lines are replaced with a `(unchanged lines left out)` line, which the system instruction explains. Lines are only left out when that saves more than one line.
 4. Angle brackets in the diff are escaped before it is wrapped in `<changes>` tags, so revision text can't break out of them.
 5. If nothing changed in the title or content (for example, only meta changed), a fixed message is returned and **no model request is made**.
 6. Diffs longer than the limit are cut, on a line boundary when one is close, and `truncated` is set to `true`.
@@ -118,10 +118,11 @@ Response:
 
 ```json
 {
-  "summary": "Rewrote the introduction and added a closing paragraph.",
+  "summary": "Updated the start and the end of the post.",
   "changes": [
     "Changed the first paragraph to describe the new release.",
-    "Added a closing paragraph with a call to action."
+    "Added a closing paragraph with a call to action.",
+    "Changed the title to name the release."
   ],
   "truncated": false,
   "from_revision_id": 455,
@@ -147,6 +148,8 @@ The system instruction, prompt and prompt builder can be changed with the standa
 - `wpai_revision_change_summary_system_instruction`
 - `wpai_revision_change_summary_prompt` (arguments: prompt, diff, truncated, revision)
 - `wpai_revision_change_summary_prompt_builder` (arguments: builder, prompt, truncated)
+
+Whatever the prompt asks for, list items that repeat the summary or each other are removed, and when the model returns fewer than three distinct items the list is left out and only the summary is shown.
 
 ## Testing
 

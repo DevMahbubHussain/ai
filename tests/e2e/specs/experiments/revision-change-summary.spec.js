@@ -12,7 +12,7 @@ const {
 } = require( '../../utils/helpers' );
 
 const EXPERIMENT_LABEL = 'Revision Change Summary';
-const SUMMARY_TEXT = 'Rewrote the introduction and added a closing paragraph.';
+const SUMMARY_TEXT = 'Updated the start and the end of the post.';
 
 /**
  * Creates a post with three saved revisions.
@@ -28,14 +28,22 @@ async function createPostWithRevisions( requestUtils ) {
 		status: 'draft',
 	} );
 
-	for ( const content of [
-		'<!-- wp:paragraph --><p>Second introduction.</p><!-- /wp:paragraph -->',
-		'<!-- wp:paragraph --><p>Third introduction.</p><!-- /wp:paragraph --><!-- wp:paragraph --><p>Closing paragraph.</p><!-- /wp:paragraph -->',
+	// The last version has the three changes the mocked summary lists.
+	for ( const data of [
+		{
+			content:
+				'<!-- wp:paragraph --><p>Second introduction.</p><!-- /wp:paragraph -->',
+		},
+		{
+			title: 'Revision Change Summary Test 2.0',
+			content:
+				'<!-- wp:paragraph --><p>Third introduction.</p><!-- /wp:paragraph --><!-- wp:paragraph --><p>Closing paragraph.</p><!-- /wp:paragraph -->',
+		},
 	] ) {
 		await requestUtils.rest( {
 			method: 'POST',
 			path: `/wp/v2/posts/${ post.id }`,
-			data: { content },
+			data,
 		} );
 	}
 
